@@ -55,6 +55,7 @@ type server struct {
 	callsTemplate    *template.Template
 	callTemplate     *template.Template
 	patternsTemplate *template.Template
+	heatMapTemplate  *template.Template
 	stopTemplate     *template.Template
 }
 
@@ -103,6 +104,7 @@ type Config struct {
 	patternsTemplatePath string
 	callTemplatePath     string
 	stopTemplatePath     string
+	heatMapTemplatePath  string
 }
 
 const (
@@ -467,6 +469,7 @@ func Init() *Config {
 	cfg.callsTemplatePath = cfg.getTemplateFilePath("callsLayout")
 	cfg.callTemplatePath = cfg.getTemplateFilePath("callDetails")
 	cfg.stopTemplatePath = cfg.getTemplateFilePath("bye")
+	cfg.heatMapTemplatePath = cfg.getTemplateFilePath("heatMap")
 	cfg.patternsTemplatePath = cfg.getTemplateFilePath("patterns")
 	return cfg
 }
@@ -478,6 +481,10 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	s.indexTemplate.Execute(w, s.cfg)
+}
+
+func (s *server) heatMap(w http.ResponseWriter, r *http.Request){
+	s.heatMapTemplate.Execute(w, s.cfg)
 }
 
 func (s *server) calls(w http.ResponseWriter, r *http.Request) {
@@ -509,6 +516,7 @@ func newServer(cfg *Config) *server {
 	s.mux.HandleFunc("/call", s.call)
 	s.mux.HandleFunc("/patterns", s.patterns)
 	s.mux.HandleFunc("/stop", s.stop)
+	s.mux.HandleFunc("/heatmap", s.heatMap)
 	s.mux.Handle("/images/", http.StripPrefix("/images", http.FileServer(http.Dir(s.cfg.DatasetDir))))
 	return s
 }
@@ -541,6 +549,7 @@ func (c *Config) Start() error {
 			return fmt.Sprintf("profiler_rank%d_call%d.png", leadRank, callID)
 		}}).ParseFiles(c.callTemplatePath))
 	s.callsTemplate = template.Must(template.ParseFiles(c.callsTemplatePath))
+	s.heatMapTemplate = template.Must(template.ParseFiles(c.heatMapTemplatePath))
 	s.patternsTemplate = template.Must(template.ParseFiles(c.patternsTemplatePath))
 	s.stopTemplate = template.Must(template.ParseFiles(c.stopTemplatePath))
 
