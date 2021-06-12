@@ -7,13 +7,16 @@
 package webui
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,7 +48,14 @@ type callPageData struct {
 }
 
 type patternsSummaryData struct {
-	Content string
+	Content  string
+	Patterns patternsData
+}
+
+type patternsData struct {
+	Patterns   []int // slice stores pattern numbers
+	Calls      []int // slice stores number of calls for corresponding pattern
+	TotalCalls int
 }
 
 type server struct {
@@ -98,6 +108,8 @@ type Config struct {
 	mainData callsPageData
 	cpd      callPageData
 	psd      patternsSummaryData
+	pd       patternsData
+	tpd      patternsData
 
 	indexTemplatePath    string
 	callsTemplatePath    string
@@ -303,6 +315,7 @@ func (c *Config) serviceCallDetailsRequest(w http.ResponseWriter, r *http.Reques
 		CallID:    callID,
 		CallsData: c.mainData.Calls,
 	}
+
 }
 
 func (c *Config) loadData() error {
@@ -368,6 +381,101 @@ func findPatternsSummaryFile(c *Config) (string, error) {
 	return "", nil
 }
 
+func findPatternsFile(c *Config) (string, error) {
+	files, err := ioutil.ReadDir(c.DatasetDir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), patterns.AllPatternsPrefix) {
+			return filepath.Join(c.DatasetDir, file.Name()), nil
+		}
+	}
+
+	return "", nil
+}
+
+func (patterns patternsData) Len() int {
+	return len(patterns.Patterns)
+}
+
+func (patterns patternsData) Swap(i, j int) {
+	patterns.Calls[i], patterns.Calls[j] = patterns.Calls[j], patterns.Calls[i]
+	patterns.Patterns[i], patterns.Patterns[j] = patterns.Patterns[j], patterns.Patterns[i]
+}
+
+func (patterns patternsData) Less(i, j int) bool {
+	return patterns.Calls[i] < patterns.Calls[j]
+}
+
+func parsePatternsFile(path string) (patternsData, error) {
+
+	var pd patternsData
+
+	file, err := os.Open(path)
+	if err != nil {
+		return pd, err
+	}
+
+	scanner := bufio.NewScanner(file)
+	scanner.Split(bufio.ScanLines)
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		if strings.HasPrefix(line, "## Pattern #") {
+			line = strings.ReplaceAll(line, "## Pattern #", "")
+			line = strings.ReplaceAll(line, " alltoallv calls)", "")
+			line = strings.ReplaceAll(line, "(", "")
+			line = strings.ReplaceAll(line, "/", " ")
+			parts := strings.Split(line, " ")
+
+			patternNumber, err := strconv.Atoi(parts[0])
+			if err != nil {
+				return pd, err
+			}
+			pd.Patterns = append(pd.Patterns, patternNumber)
+
+			patternCalls, err := strconv.Atoi(parts[1])
+			if err != nil {
+				return pd, err
+			}
+			pd.Calls = append(pd.Calls, patternCalls)
+
+			pd.TotalCalls, err = strconv.Atoi(parts[2])
+			if err != nil {
+				return pd, err
+			}
+
+		}
+
+	}
+
+	return pd, nil
+}
+
+func getTop10patterns(pd patternsData) patternsData {
+
+	// Sort the patterns according to number of calls
+	sort.Sort(sort.Reverse(patternsData(pd)))
+
+	//Trim the slice if it is greater than ten
+	if len(pd.Calls) > 10 {
+
+		var out patternsData
+
+		for i := 0; i < 10; i++ {
+			out.Calls = append(out.Calls, pd.Calls[i])
+			out.Patterns = append(out.Patterns, pd.Patterns[i])
+		}
+
+		out.TotalCalls = pd.TotalCalls
+		return out
+	}
+	return pd
+}
+
 func (c *Config) servicePatternRequest(w http.ResponseWriter, r *http.Request) {
 
 	patternsFilePath, err := findPatternsSummaryFile(c)
@@ -400,9 +508,26 @@ func (c *Config) servicePatternRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	htmlContent := string(markdown.ToHTML(mdContent, nil, nil))
 
-	c.psd = patternsSummaryData{
-		Content: htmlContent,
+	allPatternsFilePath, err := findPatternsFile(c)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+	if allPatternsFilePath == "" {
+		http.Error(w, "unable to load patterns", http.StatusInternalServerError)
+	}
+
+	c.pd, err = parsePatternsFile(allPatternsFilePath)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	c.tpd = getTop10patterns(c.pd)
+
+	c.psd = patternsSummaryData{
+		Content:  htmlContent,
+		Patterns: c.tpd,
+	}
+
 }
 
 // Stop cleanly terminates a running webUI
@@ -448,6 +573,9 @@ func RemoteStop(host string, port string) error {
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
 	bs := string(body)
 	fmt.Printf("checkme: %s\n", bs)
 
@@ -483,7 +611,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	s.indexTemplate.Execute(w, s.cfg)
 }
 
-func (s *server) heatMap(w http.ResponseWriter, r *http.Request){
+func (s *server) heatMap(w http.ResponseWriter, r *http.Request) {
 	s.heatMapTemplate.Execute(w, s.cfg)
 }
 

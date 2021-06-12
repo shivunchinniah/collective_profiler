@@ -25,6 +25,7 @@ import (
 const (
 	// SummaryFilePrefix is the prefix of all the pattern summary files
 	SummaryFilePrefix = "patterns-summary-"
+	AllPatternsPrefix = "patterns-job"
 )
 
 type CallData struct {
@@ -312,6 +313,17 @@ func (d *Data) addPattern(callNum int, sendPatterns map[int]int, recvPatterns ma
 			d.NToOne = append(d.NToOne, new_cp)
 			continue
 		}
+
+		// Possible change here: some patterns may not be classified
+
+		// if nDest > nSrc*100 {
+		// 	d.OneToN = append(d.OneToN, new_cp)
+		// } else if nDest*100 < nSrc {
+		// 	d.NToOne = append(d.NToOne, new_cp)
+		// } else {
+		// 	d.NToN = append(d.NToN, new_cp)
+		// }
+
 	}
 
 	return nil
@@ -569,6 +581,7 @@ func WriteData(patternsFd *os.File, patternsSummaryFd *os.File, patternsData Dat
 				}
 				num++
 			}
+
 		}
 
 		if len(patternsData.NToOne) != 0 {
@@ -582,7 +595,9 @@ func WriteData(patternsFd *os.File, patternsSummaryFd *os.File, patternsData Dat
 				if err != nil {
 					return err
 				}
+				num++
 			}
+
 		}
 
 		if len(patternsData.NToN) != 0 {
@@ -596,7 +611,9 @@ func WriteData(patternsFd *os.File, patternsSummaryFd *os.File, patternsData Dat
 				if err != nil {
 					return err
 				}
+				num++
 			}
+
 		}
 	} else {
 		_, err = patternsSummaryFd.WriteString("Nothing special detected; no summary")

@@ -1,1 +1,26 @@
+
+
+<h1>Top {{ .Patterns.Len }} Patterns </h1>
+<p>Below is a list of up to the top 10 most heaviest patterns.</p>
+
+
+<ol>
+{{ $pnums := .Patterns.Patterns }}
+{{  $calls := .Patterns.Calls}}
+{{ $total := .Patterns.TotalCalls}}
+{{range $index,$pattern := .Patterns.Patterns }}
+
+    <li>Pattern #{{index $pnums $index}} ({{index $calls $index}} of {{$total}} calls)</li>
+    <img src="/images/heatmap_8color_pattern{{index $pnums $index}}.png" width="400" style="max-width: 80vw; margin-left: auto; margin-right: auto;">
+
+{{end}}
+</ol>
+
+
+<h1>Summary</h1> 
+
 {{ .Content }}
+
+
+
+
