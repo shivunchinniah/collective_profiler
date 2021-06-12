@@ -477,6 +477,8 @@ func SaveStats(info OutputFileInfo, cs counts.SendRecvStats, patternsData patter
 		return err
 	}
 
+	// write gnuplot scripts here for patterns heat maps
+
 	return nil
 }
 
@@ -1105,11 +1107,15 @@ func (cfg *PostmortemConfig) Analyze() error {
 			}
 			t := timer.Start()
 
+			fmt.Printf("Generating Heatmaps for patterns. \n")
+
+			plot.PatternHeatMaps(cfg.DatasetDir, resultsStep1.allPatterns, resultsStep1.allCallsData)
+
 			listCalls, err := notation.ConvertCompressedCallListToIntSlice(cfg.CallsToPlot)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("* Generating graphs for calls: %d\n", listCalls)
+			fmt.Printf("Generating graphs for calls: %d\n", listCalls)
 			err = plotCallsData(cfg.CodeBaseDir, cfg.DatasetDir, listCalls, resultsStep1.allCallsData, resultsStep3.rankFileData, resultsStep3.callMaps, resultsStep4.collectiveOpsTimings["alltoallv"].ExecTimes, resultsStep4.collectiveOpsTimings["alltoallv"].LateArrivalTimes)
 			if err != nil {
 				return fmt.Errorf("unable to plot data, plotCallsData() failed: %s", err)
@@ -1118,6 +1124,7 @@ func (cfg *PostmortemConfig) Analyze() error {
 			if err != nil {
 				return fmt.Errorf("unable to plot average data: %s", err)
 			}
+
 			duration := t.Stop()
 			fmt.Printf("Step completed in %s\n", duration)
 		} else {

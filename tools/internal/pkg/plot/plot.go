@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gvallee/alltoallv_profiling/tools/internal/pkg/counts"
+	"github.com/gvallee/alltoallv_profiling/tools/internal/pkg/patterns"
 	"github.com/gvallee/alltoallv_profiling/tools/internal/pkg/scale"
 	"github.com/gvallee/go_util/pkg/util"
 )
@@ -221,6 +223,7 @@ func (d *plotData) generateCallsAvgs(hostname string, leadRank int, callID int) 
 			return err
 		}
 		scaledRecvRankBWUnit, scaledRecvRankBW, err := scale.MapFloat64s("B/s", d.recvRankBW)
+
 		if err != nil {
 			return err
 		}
@@ -629,6 +632,8 @@ func runGnuplot(gnuplotScript string, outputDir string) error {
 		return err
 	}
 
+	// Task 8 - can remove gnuplot scripts once images are generated
+
 	return nil
 }
 
@@ -671,4 +676,103 @@ func Avgs(dir string, outputDir string, numRanks int, hostMap map[string][]int, 
 	}
 
 	return runGnuplot(gnuplotScript, outputDir)
+}
+
+func generateHeatMap8ColorScript(outputDir string, pattern *patterns.CallData, num int, counts map[int][]int, datatypeSize int) error {
+	ranks := len(counts[0])
+
+	plotScriptFile := filepath.Join(outputDir, "heatmap_8color_pattern"+strconv.Itoa(num)+".gnuplot")
+	fd, err := os.OpenFile(plotScriptFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+
+	if err != nil {
+		return err
+	}
+
+	fd.WriteString("set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n")
+	fd.WriteString("set output \"heatmap_8color_pattern" + strconv.Itoa(num) + ".png\"\n")
+
+	// todo: determine an apropriate tick interval according to ranks size
+
+	fd.WriteString("unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n")
+
+	fd.WriteString(fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ %f: -0.50000 ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5))
+
+	fd.WriteString(`set y2range [ * : * ] noreverse writeback
+set zrange [ * : * ] noreverse writeback
+set cblabel "Message Size (B)" 
+set xlabel "Rank Send"
+set ylabel "Rank Receive"
+set cbtics (">1M" 6.525, ">100K" 5.65, ">10K" 4.775, ">1K" 3.9, ">100" 3.025, ">10" 2.15, ">1" 1.275, "0" 0.4) border in scale 0
+set cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback
+set rrange [ * : * ] noreverse writeback
+set palette maxcolors 8
+set palette defined (0 "white", 1 "yellow", 2 "orange", 3 "green", 4 "red", 5 "purple", 6 "brown", 7 "black")
+NO_ANIMATION = 1
+`)
+
+	fd.WriteString("$map1 << EOD\n")
+
+	for i := 0; i < ranks; i++ {
+		for j := 0; j < ranks; j++ {
+			fd.WriteString(strconv.Itoa(scale8ColorCounts(counts[j][i]*datatypeSize)) + " ")
+		}
+		fd.WriteString("\n")
+	}
+
+	fd.WriteString("EOD \n")
+
+	fd.WriteString("splot $map1 matrix with image")
+
+	return nil
+}
+
+func scale8ColorCounts(count int) int {
+	if count == 0 {
+		return 0
+	}
+	if count > 0 && count <= 10 {
+		return 1
+	}
+	if count > 10 && count <= 100 {
+		return 2
+	}
+	if count > 100 && count <= 1000 {
+		return 3
+	}
+	if count > 1000 && count <= 10000 {
+		return 4
+	}
+	if count > 10000 && count <= 100000 {
+		return 5
+	}
+	if count > 100000 && count <= 1000000 {
+		return 6
+	}
+	if count > 1000000 {
+		return 7
+	}
+	return 0
+}
+
+// Heat Map plots are called from profiler.go to generate the Heat Maps for the patterns
+func PatternHeatMaps(outputDir string, patterns map[int]patterns.Data, counts []counts.CommDataT) error {
+
+	for _, p := range patterns {
+
+		for i, pattern := range p.AllPatterns {
+
+			// Generate Heat Maps for Task 3
+			sendData := counts[0].CallData[pattern.Calls[i]].SendData
+
+			generateHeatMap8ColorScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize)
+			runGnuplot("heatmap_8color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+
+			// Generate Heat Maps for Task 4
+
+			// Generate Heat Maps for Task 5
+		}
+
+	}
+
+	return nil
 }
