@@ -477,8 +477,6 @@ func SaveStats(info OutputFileInfo, cs counts.SendRecvStats, patternsData patter
 		return err
 	}
 
-	// write gnuplot scripts here for patterns heat maps
-
 	return nil
 }
 

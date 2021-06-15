@@ -691,8 +691,6 @@ func generateHeatMap8ColorScript(outputDir string, pattern *patterns.CallData, n
 	fd.WriteString("set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n")
 	fd.WriteString("set output \"heatmap_8color_pattern" + strconv.Itoa(num) + ".png\"\n")
 
-	// todo: determine an apropriate tick interval according to ranks size
-
 	fd.WriteString("unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n")
 
 	fd.WriteString(fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ %f: -0.50000 ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5))
@@ -754,24 +752,130 @@ func scale8ColorCounts(count int) int {
 	return 0
 }
 
+func linearDistribution(messageLen int) int {
+
+	return int(math.Min((float64(messageLen) / 4000), 255))
+
+}
+
+func logarithmicDistribution(messageLen int) int {
+
+	out := int(1.6*math.Log2(float64(messageLen))*8) - 1
+	if out < 1 {
+		return 0
+	}
+	return out
+
+}
+
+func generateHeatMapSumScript(outputDir string, cellSum [][]int, ranks int) error {
+
+	plotScriptFile := filepath.Join(outputDir, "heatmap_8color_pattern_sum.gnuplot")
+	fd, err := os.OpenFile(plotScriptFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+
+	if err != nil {
+		return err
+	}
+
+	fd.WriteString("set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n")
+	fd.WriteString("set output \"heatmap_8color_pattern_sum.png\"\n")
+
+	fd.WriteString("unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n")
+
+	fd.WriteString(fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ %f: -0.50000 ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5))
+
+	fd.WriteString(`set y2range [ * : * ] noreverse writeback
+set zrange [ * : * ] noreverse writeback
+set cblabel "Message Size (B)" 
+set xlabel "Rank Send"
+set ylabel "Rank Receive"
+set cbtics (">1M" 6.525, ">100K" 5.65, ">10K" 4.775, ">1K" 3.9, ">100" 3.025, ">10" 2.15, ">1" 1.275, "0" 0.4) border in scale 0
+set cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback
+set rrange [ * : * ] noreverse writeback
+set palette maxcolors 8
+set palette defined (0 "white", 1 "yellow", 2 "orange", 3 "green", 4 "red", 5 "purple", 6 "brown", 7 "black")
+NO_ANIMATION = 1
+`)
+
+	fd.WriteString("$map1 << EOD\n")
+
+	for i := 0; i < ranks; i++ {
+		for j := 0; j < ranks; j++ {
+			fd.WriteString(strconv.Itoa(scale8ColorCounts(cellSum[j][i])) + " ")
+		}
+		fd.WriteString("\n")
+	}
+
+	fd.WriteString("EOD \n")
+
+	fd.WriteString("splot $map1 matrix with image")
+
+	return nil
+}
+
+func addToCellSum(cellSum [][]int, counts map[int][]int, ranks int, weight int, dataSize int) {
+	for i := 0; i < ranks; i++ {
+		for j := 0; j < ranks; j++ {
+			cellSum[i][j] += counts[i][j] * dataSize * weight
+		}
+	}
+}
+
 // Heat Map plots are called from profiler.go to generate the Heat Maps for the patterns
 func PatternHeatMaps(outputDir string, patterns map[int]patterns.Data, counts []counts.CommDataT) error {
 
-	for _, p := range patterns {
+	// Check if there is at least one communicator
+	ranks := 0
+
+	for commID, p := range patterns {
+
+		for i, pattern := range p.AllPatterns {
+
+			ranks = len(counts[commID].CallData[pattern.Calls[i]].SendData.Counts[pattern.Calls[i]])
+
+			break // only need to check one
+		}
+
+		break // only need rank size from first com
+	}
+
+	if ranks == 0 {
+		return nil
+	}
+
+	cellSum := make([][]int, ranks)
+	for i := range cellSum {
+		cellSum[i] = make([]int, ranks)
+	}
+
+	for commID, p := range patterns {
 
 		for i, pattern := range p.AllPatterns {
 
 			// Generate Heat Maps for Task 3
-			sendData := counts[0].CallData[pattern.Calls[i]].SendData
+			sendData := counts[commID].CallData[pattern.Calls[i]].SendData
 
-			generateHeatMap8ColorScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize)
-			runGnuplot("heatmap_8color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+			fmt.Printf("Add cellSum:  pattern: %d count: %d \n", i, pattern.Count)
 
-			// Generate Heat Maps for Task 4
+			addToCellSum(cellSum, sendData.Counts[pattern.Calls[i]], ranks, pattern.Count, sendData.CountsMetadata.DatatypeSize)
+
+			err := generateHeatMap8ColorScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize)
+			if err != nil {
+				return err
+			}
+			err = runGnuplot("heatmap_8color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+			if err != nil {
+				return err
+			}
 
 			// Generate Heat Maps for Task 5
 		}
 
+	}
+
+	err := generateHeatMapSumScript(outputDir, cellSum, ranks)
+	if err != nil {
+		return err
 	}
 
 	return nil
