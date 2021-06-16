@@ -678,48 +678,112 @@ func Avgs(dir string, outputDir string, numRanks int, hostMap map[string][]int, 
 	return runGnuplot(gnuplotScript, outputDir)
 }
 
-func generateHeatMap8ColorScript(outputDir string, pattern *patterns.CallData, num int, counts map[int][]int, datatypeSize int) error {
+func generatePatternHeatMapScript(outputDir string, pattern *patterns.CallData, num int, counts map[int][]int, datatypeSize int, distribution int) error {
+
 	ranks := len(counts[0])
 
-	plotScriptFile := filepath.Join(outputDir, "heatmap_8color_pattern"+strconv.Itoa(num)+".gnuplot")
-	fd, err := os.OpenFile(plotScriptFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	var filePrefix string
+	var cbtics string
+	var palette string
 
+	switch distribution {
+	case LOG_8_COLOR:
+		filePrefix = "heatmap_8color_pattern" + strconv.Itoa(num)
+		cbtics = "set cbtics (\">1M\" 6.525, \">100K\" 5.65, \">10K\" 4.775, \">1K\" 3.9, \">100\" 3.025, \">10\" 2.15, \">1\" 1.275, \"0\" 0.4) border in scale 0\nset cblabel \"Message Size (B)\"\nset cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 8\nset palette defined (0 \"white\", 1 \"yellow\", 2 \"orange\", 3 \"green\", 4 \"red\", 5 \"purple\", 6 \"brown\", 7 \"black\")\n"
+
+	case LINEAR_256_COLOR:
+		filePrefix = "heatmap_linear_256color_pattern" + strconv.Itoa(num)
+		cbtics = "set cbtics (\">1M\" 255, \"900k\" 229.5, \"800k\" 204, \"700k\" 178.5, \"600k\" 153, \"500k\" 127.5, \"400k\" 102, \"300k\" 76.5, \"200k\" 51, \"100k\" 25.5, \"0\" 0) border in scale 0\nset cblabel \"Message Size (B)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"yellow\", 128 \"red\", 255 \"black\")\n"
+
+	case LOG_256_COLOR:
+		filePrefix = "heatmap_log_256color_pattern" + strconv.Itoa(num)
+		cbtics = "set cbtics (\">1M\" 255, \"100k\" 212.5, \"10k\" 170, \"1k\" 127.5, \"100\" 85, \"10\" 42, \"<1\" 0) border in scale 0\nset cblabel \"Message Size (B)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"green\", 128 \"blue\", 255 \"black\")\n"
+
+	case BALANCED_LOG_256_COLOR:
+		filePrefix = "heatmap_balanced_log_256color_pattern" + strconv.Itoa(num)
+		cbtics = "set cbtics (\">1M\" 255, \"100k\" 212.5, \"10k\" 170, \"1k\" 127.5, \"100\" 85, \"10\" 42, \"<1\" 0) border in scale 0\nset cblabel \"Message Balanced Weight (rank Bytes)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"orange\", 128 \"purple\", 255 \"black\")\n"
+
+	default:
+		filePrefix = "heatmap_8color_pattern" + strconv.Itoa(num)
+		palette = "set palette maxcolors 8\nset palette defined (0 \"white\", 1 \"yellow\", 2 \"orange\", 3 \"green\", 4 \"red\", 5 \"purple\", 6 \"brown\", 7 \"black\")\n"
+		cbtics = "set cbtics (\">1M\" 6.525, \">100K\" 5.65, \">10K\" 4.775, \">1K\" 3.9, \">100\" 3.025, \">10\" 2.15, \">1\" 1.275, \"0\" 0.4) border in scale 0\nset cblabel \"Message Size (B)\"\nset cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback\n"
+
+	}
+
+	plotScriptFile := filepath.Join(outputDir, filePrefix+".gnuplot")
+
+	fd, err := os.OpenFile(plotScriptFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
 	if err != nil {
 		return err
 	}
 
-	fd.WriteString("set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n")
-	fd.WriteString("set output \"heatmap_8color_pattern" + strconv.Itoa(num) + ".png\"\n")
+	var fileContents string
 
-	fd.WriteString("unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n")
+	fileContents += "set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n"
 
-	fd.WriteString(fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ %f: -0.50000 ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5))
+	fileContents += "set output \"" + filePrefix + ".png\"\n"
 
-	fd.WriteString(`set y2range [ * : * ] noreverse writeback
-set zrange [ * : * ] noreverse writeback
-set cblabel "Message Size (B)" 
+	fileContents += "unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n"
+
+	fileContents += fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ -0.50000 : %f ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5)
+
+	fileContents += `set y2range [ * : * ] noreverse writeback
+set zrange [ * : * ] noreverse writeback 
 set xlabel "Rank Send"
 set ylabel "Rank Receive"
-set cbtics (">1M" 6.525, ">100K" 5.65, ">10K" 4.775, ">1K" 3.9, ">100" 3.025, ">10" 2.15, ">1" 1.275, "0" 0.4) border in scale 0
-set cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback
 set rrange [ * : * ] noreverse writeback
-set palette maxcolors 8
-set palette defined (0 "white", 1 "yellow", 2 "orange", 3 "green", 4 "red", 5 "purple", 6 "brown", 7 "black")
 NO_ANIMATION = 1
-`)
+`
 
-	fd.WriteString("$map1 << EOD\n")
+	fileContents += palette
+
+	fileContents += cbtics + "\n"
+
+	fileContents += "$map1 << EOD\n"
+
+	// dump := fileContents
 
 	for i := 0; i < ranks; i++ {
 		for j := 0; j < ranks; j++ {
-			fd.WriteString(strconv.Itoa(scale8ColorCounts(counts[j][i]*datatypeSize)) + " ")
+
+			var data int
+			switch distribution {
+			case LOG_8_COLOR:
+				data = scale8ColorCounts(counts[j][i] * datatypeSize)
+
+			case LINEAR_256_COLOR:
+				data = linearDistribution(counts[j][i] * datatypeSize)
+
+			case LOG_256_COLOR:
+				data = logarithmicDistribution(counts[j][i] * datatypeSize)
+
+			case BALANCED_LOG_256_COLOR:
+				data = balancedLogarithmDistribution(counts[j][i]*datatypeSize, ranks, i, j)
+
+			default:
+				data = scale8ColorCounts(counts[j][i] * datatypeSize)
+
+			}
+
+			fileContents += strconv.Itoa(data) + " "
+
 		}
-		fd.WriteString("\n")
+		fileContents += "\n"
+
 	}
 
-	fd.WriteString("EOD \n")
+	fileContents += "EOD \n"
 
-	fd.WriteString("splot $map1 matrix with image")
+	fileContents += "splot $map1 matrix with image"
+
+	_, err = fd.WriteString(fileContents)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -760,7 +824,11 @@ func linearDistribution(messageLen int) int {
 
 func logarithmicDistribution(messageLen int) int {
 
-	out := int(1.6*math.Log2(float64(messageLen))*8) - 1
+	if messageLen < 1 {
+		return 0
+	}
+
+	out := int(math.Round(1.6*math.Log2(float64(messageLen))*8)) - 1
 	if out < 1 {
 		return 0
 	}
@@ -768,47 +836,130 @@ func logarithmicDistribution(messageLen int) int {
 
 }
 
-func generateHeatMapSumScript(outputDir string, cellSum [][]int, ranks int) error {
+func balancedLogarithmDistribution(messageLen int, ranks int, sendRank int, receiveRank int) int {
+	if messageLen < 1 {
+		return 0
+	}
 
-	plotScriptFile := filepath.Join(outputDir, "heatmap_8color_pattern_sum.gnuplot")
+	balanceFactor := 1 - (math.Abs(float64(receiveRank)-float64(sendRank)) / float64(ranks))
+	out := int(math.Round(balanceFactor*1.6*math.Log2(float64(messageLen))*8)) - 1
+	if out < 1 {
+		return 0
+	}
+	return out
+}
+
+const (
+	LOG_8_COLOR            int = 0
+	LINEAR_256_COLOR       int = 1
+	LOG_256_COLOR          int = 2
+	BALANCED_LOG_256_COLOR int = 3
+)
+
+func generateHeatMapSumScript(outputDir string, cellSum [][]int, ranks int, distribution int) error {
+
+	var filePrefix string
+	var cbtics string
+	var palette string
+
+	switch distribution {
+	case LOG_8_COLOR:
+		filePrefix = "heatmap_8color_pattern_sum"
+		cbtics = "set cbtics (\">1M\" 6.525, \">100K\" 5.65, \">10K\" 4.775, \">1K\" 3.9, \">100\" 3.025, \">10\" 2.15, \">1\" 1.275, \"0\" 0.4) border in scale 0\nset cblabel \"Message Size (MB)\"\nset cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 8\nset palette defined (0 \"white\", 1 \"yellow\", 2 \"orange\", 3 \"green\", 4 \"red\", 5 \"purple\", 6 \"brown\", 7 \"black\")\n"
+
+	case LINEAR_256_COLOR:
+		filePrefix = "heatmap_linear_256color_pattern_sum"
+		cbtics = "set cbtics (\">1M\" 255, \"900k\" 229.5, \"800k\" 204, \"700k\" 178.5, \"600k\" 153, \"500k\" 127.5, \"400k\" 102, \"300k\" 76.5, \"200k\" 51, \"100k\" 25.5, \"0\" 0) border in scale 0\nset cblabel \"Message Size (MB)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"yellow\", 128 \"red\", 255 \"black\")\n"
+
+	case LOG_256_COLOR:
+		filePrefix = "heatmap_log_256color_pattern_sum"
+		cbtics = "set cbtics (\">1M\" 255, \"100k\" 212.5, \"10k\" 170, \"1k\" 127.5, \"100\" 85, \"10\" 42, \"<1\" 0) border in scale 0\nset cblabel \"Message Size (MB)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"green\", 128 \"blue\", 255 \"black\")\n"
+
+	case BALANCED_LOG_256_COLOR:
+		filePrefix = "heatmap_balanced_log_256color_pattern_sum"
+		cbtics = "set cbtics (\">1M\" 255, \"100k\" 212.5, \"10k\" 170, \"1k\" 127.5, \"100\" 85, \"10\" 42, \"<1\" 0) border in scale 0\nset cblabel \"Message Balanced Weight (rank MBytes)\"\nset cbrange [ 0.00000 : 255.0000 ] noreverse nowriteback\n"
+		palette = "set palette maxcolors 256\nset palette defined (0 \"white\", 64 \"orange\", 128 \"purple\", 255 \"black\")\n"
+
+	default:
+		filePrefix = "heatmap_8color_pattern_sum"
+		palette = "set palette maxcolors 8\nset palette defined (0 \"white\", 1 \"yellow\", 2 \"orange\", 3 \"green\", 4 \"red\", 5 \"purple\", 6 \"brown\", 7 \"black\")\n"
+		cbtics = "set cbtics (\">1M\" 6.525, \">100K\" 5.65, \">10K\" 4.775, \">1K\" 3.9, \">100\" 3.025, \">10\" 2.15, \">1\" 1.275, \"0\" 0.4) border in scale 0\nset cblabel \"Message Size (MB)\"\nset cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback\n"
+
+	}
+
+	plotScriptFile := filepath.Join(outputDir, filePrefix+".gnuplot")
+
 	fd, err := os.OpenFile(plotScriptFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-
 	if err != nil {
 		return err
 	}
 
-	fd.WriteString("set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n")
-	fd.WriteString("set output \"heatmap_8color_pattern_sum.png\"\n")
+	var fileContents string
 
-	fd.WriteString("unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n")
+	fileContents += "set terminal pngcairo  transparent enhanced font \"arial,10\" fontscale 1.0 size 600, 600 \n"
 
-	fd.WriteString(fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ %f: -0.50000 ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5))
+	fileContents += "set output \"" + filePrefix + ".png\"\n"
 
-	fd.WriteString(`set y2range [ * : * ] noreverse writeback
-set zrange [ * : * ] noreverse writeback
-set cblabel "Message Size (B)" 
+	fileContents += "unset key\nset view map scale 0.8\nset style data lines\nset ztics border in scale 0,0 nomirror norotate  autojustify\nunset cbtics\nset rtics axis in scale 0,0 nomirror norotate  autojustify\n"
+
+	fileContents += fmt.Sprintf("set xrange [ -0.500000 : %f ] noreverse nowriteback\nset x2range [ * : * ] noreverse writeback\nset yrange [ -0.50000 : %f ] noreverse nowriteback\n", float32(ranks)-0.5, float32(ranks)-0.5)
+
+	fileContents += `set y2range [ * : * ] noreverse writeback
+set zrange [ * : * ] noreverse writeback 
 set xlabel "Rank Send"
 set ylabel "Rank Receive"
-set cbtics (">1M" 6.525, ">100K" 5.65, ">10K" 4.775, ">1K" 3.9, ">100" 3.025, ">10" 2.15, ">1" 1.275, "0" 0.4) border in scale 0
-set cbrange [ 0.00000 : 7.0000 ] noreverse nowriteback
 set rrange [ * : * ] noreverse writeback
-set palette maxcolors 8
-set palette defined (0 "white", 1 "yellow", 2 "orange", 3 "green", 4 "red", 5 "purple", 6 "brown", 7 "black")
 NO_ANIMATION = 1
-`)
+`
 
-	fd.WriteString("$map1 << EOD\n")
+	fileContents += palette
+
+	fileContents += cbtics + "\n"
+
+	fileContents += "$map1 << EOD\n"
+
+	// dump := fileContents
 
 	for i := 0; i < ranks; i++ {
 		for j := 0; j < ranks; j++ {
-			fd.WriteString(strconv.Itoa(scale8ColorCounts(cellSum[j][i])) + " ")
+
+			var data int
+			switch distribution {
+			case LOG_8_COLOR:
+				data = scale8ColorCounts(cellSum[j][i] / 1000)
+
+			case LINEAR_256_COLOR:
+				data = linearDistribution(cellSum[j][i] / 1000)
+
+			case LOG_256_COLOR:
+				data = logarithmicDistribution(cellSum[j][i] / 1000)
+
+			case BALANCED_LOG_256_COLOR:
+				data = balancedLogarithmDistribution(cellSum[j][i]/1000, ranks, i, j)
+
+			default:
+				data = scale8ColorCounts(cellSum[j][i] / 1000)
+
+			}
+
+			fileContents += strconv.Itoa(data) + " "
+
 		}
-		fd.WriteString("\n")
+		fileContents += "\n"
+
 	}
 
-	fd.WriteString("EOD \n")
+	fileContents += "EOD \n"
 
-	fd.WriteString("splot $map1 matrix with image")
+	fileContents += "splot $map1 matrix with image"
+
+	_, err = fd.WriteString(fileContents)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -852,14 +1003,12 @@ func PatternHeatMaps(outputDir string, patterns map[int]patterns.Data, counts []
 
 		for i, pattern := range p.AllPatterns {
 
-			// Generate Heat Maps for Task 3
+			// Generate Heat Maps for Task 3 & 5
 			sendData := counts[commID].CallData[pattern.Calls[i]].SendData
-
-			fmt.Printf("Add cellSum:  pattern: %d count: %d \n", i, pattern.Count)
 
 			addToCellSum(cellSum, sendData.Counts[pattern.Calls[i]], ranks, pattern.Count, sendData.CountsMetadata.DatatypeSize)
 
-			err := generateHeatMap8ColorScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize)
+			err := generatePatternHeatMapScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize, LOG_8_COLOR)
 			if err != nil {
 				return err
 			}
@@ -868,12 +1017,66 @@ func PatternHeatMaps(outputDir string, patterns map[int]patterns.Data, counts []
 				return err
 			}
 
-			// Generate Heat Maps for Task 5
+			err = generatePatternHeatMapScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize, LINEAR_256_COLOR)
+			if err != nil {
+				return err
+			}
+			err = runGnuplot("heatmap_linear_256color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+			if err != nil {
+				return err
+			}
+
+			err = generatePatternHeatMapScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize, LOG_256_COLOR)
+			if err != nil {
+				return err
+			}
+			err = runGnuplot("heatmap_log_256color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+			if err != nil {
+				return err
+			}
+
+			err = generatePatternHeatMapScript(outputDir, pattern, i, sendData.Counts[pattern.Calls[i]], sendData.CountsMetadata.DatatypeSize, BALANCED_LOG_256_COLOR)
+			if err != nil {
+				return err
+			}
+			err = runGnuplot("heatmap_balanced_log_256color_pattern"+strconv.Itoa(i)+".gnuplot", outputDir)
+			if err != nil {
+				return err
+			}
+
 		}
 
 	}
 
-	err := generateHeatMapSumScript(outputDir, cellSum, ranks)
+	err := generateHeatMapSumScript(outputDir, cellSum, ranks, LOG_8_COLOR)
+	if err != nil {
+		return err
+	}
+	err = runGnuplot("heatmap_8color_pattern_sum.gnuplot", outputDir)
+	if err != nil {
+		return err
+	}
+	err = generateHeatMapSumScript(outputDir, cellSum, ranks, LINEAR_256_COLOR)
+	if err != nil {
+		return err
+	}
+	err = runGnuplot("heatmap_linear_256color_pattern_sum.gnuplot", outputDir)
+	if err != nil {
+		return err
+	}
+	err = generateHeatMapSumScript(outputDir, cellSum, ranks, LOG_256_COLOR)
+	if err != nil {
+		return err
+	}
+	err = runGnuplot("heatmap_log_256color_pattern_sum.gnuplot", outputDir)
+	if err != nil {
+		return err
+	}
+	err = generateHeatMapSumScript(outputDir, cellSum, ranks, BALANCED_LOG_256_COLOR)
+	if err != nil {
+		return err
+	}
+	err = runGnuplot("heatmap_balanced_log_256color_pattern_sum.gnuplot", outputDir)
 	if err != nil {
 		return err
 	}

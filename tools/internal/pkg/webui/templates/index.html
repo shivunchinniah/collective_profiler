@@ -115,10 +115,60 @@
             // Show the current tab, and add an "active" class to the button that opened the tab
             document.getElementById(tabName).style.display = "inline-block";
             evt.currentTarget.className += " active";
+
+
         }
+
+
+        
+        // function initHeatMaps(){
+
+        //     console.log('heatmap searching...' + document.getElementsByClassName("heatmap-spawner").length);
+
+        //     var maps = document.getElementsByClassName("heatmap-spawner");
+
+        //     var distributions = ["8color", "linear_256color", "log_256color", "balanced_log256color"];
+        //     var distributions_labels = ["8 color", "Linear", "Logarithmic", "Balanced Logarithmic"];
+        //     // remove the init class name from the div
+            
+        //     for(var i = 0; i<maps.length; i++){
+        //         maps[i].classList.remove("heatmap-spawner");
+        //         maps[i].style.position = "relative"
+
+        //         //create elements within
+        //         var image = document.createElement("img")
+        //         image.style.maxWidth = "80vw";
+        //         image.style.marginLeft = "auto";
+        //         image.style.marginRight = "auto";
+        //         image.width = maps[i].dataset.width;
+        //         image.src = maps[i].dataset.prefix + distributions[0] + maps[i].dataset.suffix;
+        //         image.id = maps[i].dataset.id;
+
+        //         maps[i].appendChild(image);
+
+        //         // add buttons for the different distributions
+        //         for(var j = 0; j<distributions.length; j++){
+        //             var button = document.createElement("button");
+        //             button.innerHTML = distributions_labels[j];
+        //             button.onclick = "heatmapUpdate("+maps[i].dataset.id+","+j+")";
+        //             maps[i].appendChild(button);
+        //         }
+
+        //     }
+
+
+
+
+        // }
+
+        // function heatmapUpdate(id, target){
+        //     console.log(id + " " + target);
+        // }
+
 
         window.onload = function () {
             document.getElementsByClassName("tablinks")[0].click();
+            //initHeatMaps();
         }
     </script>
 </body>
