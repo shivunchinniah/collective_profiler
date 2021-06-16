@@ -1,26 +1,81 @@
-
-
 <h1>Top {{ .Patterns.Len }} Patterns </h1>
 <p>Below is a list of up to the top 10 most heaviest patterns.</p>
 
 
 <ol>
-{{ $pnums := .Patterns.Patterns }}
-{{  $calls := .Patterns.Calls}}
-{{ $total := .Patterns.TotalCalls}}
-{{range $index,$pattern := .Patterns.Patterns }}
+    {{ $pnums := .Patterns.Patterns }}
+    {{ $calls := .Patterns.Calls}}
+    {{ $total := .Patterns.TotalCalls}}
+    {{range $index,$pattern := .Patterns.Patterns }}
 
     <li>Pattern #{{index $pnums $index}} ({{index $calls $index}} of {{$total}} calls)</li>
-    <img src="/images/heatmap_8color_pattern{{index $pnums $index}}.png" width="400" style="max-width: 80vw; margin-left: auto; margin-right: auto;">
+    <div class="heatmap-spawner" data-width="700" data-id="hm{{index $pnums $index}}" data-prefix="/images/heatmap_"
+        data-suffix="_pattern{{index $pnums $index}}.png"></div>
+        <br>
 
-{{end}}
+    {{end}}
 </ol>
 
 
-<h1>Summary</h1> 
+<script>
+
+  
+    var distributions = ["8color", "linear_256color", "log_256color", "balanced_log_256color"];
+    var distributions_labels = ["8 color", "Linear", "Logarithmic", "Balanced Logarithmic"];
+
+    function initHeatMaps() {
+
+
+        var maps = document.querySelectorAll("div.heatmap-spawner");
+
+        for (var i = 0; i < maps.length; i++) {
+            maps[i].classList.remove("heatmap-spawner");
+            maps[i].style.position = "relative"
+
+
+            //create elements within
+            var image = document.createElement("img")
+            image.style.maxWidth = "80vw";
+            image.style.marginLeft = "auto";
+            image.style.marginRight = "auto";
+            image.width = maps[i].dataset.width;
+            image.src = maps[i].dataset.prefix + distributions[0] + maps[i].dataset.suffix;
+            image.id = maps[i].dataset.id;
+
+            maps[i].appendChild(image);
+            var lineBreak = document.createElement("BR");
+            maps[i].appendChild(lineBreak);
+
+            // add buttons for the different distributions
+            for (let j = 0; j < distributions.length; j++) {
+                var button = document.createElement("button");
+                button.innerHTML = distributions_labels[j];
+                button.classList.add("tab")
+                maps[i].dataset.selected = j;
+                button.setAttribute('onclick', "heatmapUpdate('" + image.id + "'," + j + ")");
+                maps[i].appendChild(button);
+            }
+
+
+
+        }
+
+
+
+
+    }
+
+    function heatmapUpdate(id, target) {
+        var map = document.querySelector("[data-id='" + id + "']");
+        document.getElementById(id).src = map.dataset.prefix + distributions[target] + map.dataset.suffix;
+    }
+
+    window.onload = function () {
+        initHeatMaps();
+    }
+
+</script>
+
+<h1>Summary</h1>
 
 {{ .Content }}
-
-
-
-
